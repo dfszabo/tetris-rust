@@ -10,6 +10,7 @@ use sdl2::render::TextureQuery;
 use sdl2::ttf::Sdl2TtfContext;
 use std::process::exit;
 use std::time::Duration;
+use chrono::{DateTime, Utc};
 
 use rayon::prelude::*;
 
@@ -42,36 +43,36 @@ pub fn input(mut event_pump: &mut EventPump) -> MoveAction {
     action
 }
 
-pub fn run_tetris(run_count: usize, simulate_only: bool, fitness_params: [u64; 6]) -> u32 {
+pub fn run_tetris_with_GUI(run_count: usize, fitness_params: [u64; 6]) -> u32 {
     // ============
     // Initializing
     // ============
-    // let sdl_context = sdl2::init().unwrap();
-    // let video_subsystem = sdl_context.video().unwrap();
-    // let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string()).unwrap();
-    //
-    // let mut window;
-    // let mut canvas;
-    // let mut event_pump = sdl_context.event_pump().unwrap();
-    // let mut texture_creator;
-    // let mut font;
-    //
-    // window = video_subsystem
-    //     .window("Tetris", 600, 800)
-    //     .position_centered()
-    //     .build()
-    //     .unwrap();
-    //
-    // canvas = window.into_canvas().build().unwrap();
-    // texture_creator = canvas.texture_creator();
-    //
-    // // Load font
-    // font = ttf_context.load_font("NotoMono.ttf", 36).unwrap();
-    // font.set_style(sdl2::ttf::FontStyle::BOLD);
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+    let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string()).unwrap();
 
-    // canvas.set_draw_color(Color::RGB(255, 255, 255));
-    // canvas.clear();
-    // canvas.present();
+    let mut window;
+    let mut canvas;
+    let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut texture_creator;
+    let mut font;
+
+    window = video_subsystem
+        .window("Tetris", 600, 800)
+        .position_centered()
+        .build()
+        .unwrap();
+
+    canvas = window.into_canvas().build().unwrap();
+    texture_creator = canvas.texture_creator();
+
+    // Load font
+    font = ttf_context.load_font("NotoMono.ttf", 36).unwrap();
+    font.set_style(sdl2::ttf::FontStyle::BOLD);
+
+    canvas.set_draw_color(Color::RGB(255, 255, 255));
+    canvas.clear();
+    canvas.present();
 
     // ==========
     // Game logic
@@ -87,11 +88,6 @@ pub fn run_tetris(run_count: usize, simulate_only: bool, fitness_params: [u64; 6
         loop_counter += 1;
         let mut action = NONE;
 
-        // if !simulate_only {
-        //     // Handling input
-        //     action = input(&mut event_pump);
-        // }
-
         // Update
         // force down the piece in every few iteration
         if loop_counter > 20 {
@@ -99,7 +95,7 @@ pub fn run_tetris(run_count: usize, simulate_only: bool, fitness_params: [u64; 6
             // if cant, then add the piece to the board and spawn a new one
             if !game.move_piece_down() {
                 game.add_current_piece();
-                let kind = rng.gen::<usize>() % 7;
+                let kind = game.next_piece_kind;
 
                 if !game.does_piece_fit(kind, 0, 0, 5) {
                     round_counter += 1;
@@ -115,14 +111,19 @@ pub fn run_tetris(run_count: usize, simulate_only: bool, fitness_params: [u64; 6
                 game.score += 1;
                 game.find_and_remove_solved_lines();
 
-                let new_piece = Piece {
+                game.curr_piece = Piece {
                     kind,
                     rotation: 0,
                     x: 0,
                     y: 5,
                 };
-
-                game.curr_piece = new_piece;
+                game.next_piece_kind = rng.gen::<usize>() % 7;
+                game.target_piece = Piece {
+                    kind: 100,
+                    rotation: 100,
+                    x: 100,
+                    y: 100,
+                };
             }
 
             // if the current input action was moving down then do not do it since the
@@ -144,63 +145,134 @@ pub fn run_tetris(run_count: usize, simulate_only: bool, fitness_params: [u64; 6
         };
 
         // Draw
-        if simulate_only {
-            continue;
+
+        game.add_current_piece();
+        canvas.set_draw_color(Color::RGB(255, 255, 255));
+        canvas.clear();
+
+        for row in 0..HEIGHT as usize {
+            for col in 0..WIDTH as usize {
+                if game.board[row][col] != 0 {
+                    canvas.set_draw_color(Color::RGB(
+                        128,
+                        game.board[row][col] * (255 / 7),
+                        game.board[row][col] * (255 / 7),
+                    ));
+                } else {
+                    canvas.set_draw_color(Color::RGB(0, 0, 0));
+                }
+
+                canvas.fill_rect(Rect::new(
+                    (col as u32 * RECT_DIM) as i32,
+                    (row as u32 * RECT_DIM) as i32,
+                    RECT_DIM,
+                    RECT_DIM,
+                ));
+            }
         }
-        //
-        // game.add_current_piece();
-        // canvas.set_draw_color(Color::RGB(255, 255, 255));
-        // canvas.clear();
-        //
-        // for row in 0..HEIGHT as usize {
-        //     for col in 0..WIDTH as usize {
-        //         if game.board[row][col] != 0 {
-        //             canvas.set_draw_color(Color::RGB(
-        //                 128,
-        //                 game.board[row][col] * (255 / 7),
-        //                 game.board[row][col] * (255 / 7),
-        //             ));
-        //         } else {
-        //             canvas.set_draw_color(Color::RGB(0, 0, 0));
-        //         }
-        //
-        //         canvas.fill_rect(Rect::new(
-        //             (col as u32 * RECT_DIM) as i32,
-        //             (row as u32 * RECT_DIM) as i32,
-        //             RECT_DIM,
-        //             RECT_DIM,
-        //         ));
-        //     }
-        // }
-        // // render a surface, and convert it to a texture bound to the canvas
-        // let score = format!("Score {}", game.score);
-        // let surface = font
-        //     .render(&score)
-        //     .blended(Color::RGB(0, 0, 0))
-        //     .map_err(|e| e.to_string())
-        //     .unwrap();
-        // let texture = texture_creator
-        //     .create_texture_from_surface(&surface)
-        //     .map_err(|e| e.to_string())
-        //     .unwrap();
-        // let target = Rect::new(SCREEN_WIDTH as i32 + 20, 0, score.len() as u32 * 15, 44);
-        // canvas.copy(&texture, None, Some(target)).unwrap();
-        //
-        // game.remove_current_piece();
-        //
-        // canvas.present();
+        // render a surface, and convert it to a texture bound to the canvas
+        let score = format!("Score {}", game.score);
+        let surface = font
+            .render(&score)
+            .blended(Color::RGB(0, 0, 0))
+            .map_err(|e| e.to_string())
+            .unwrap();
+        let texture = texture_creator
+            .create_texture_from_surface(&surface)
+            .map_err(|e| e.to_string())
+            .unwrap();
+        let target = Rect::new(SCREEN_WIDTH as i32 + 20, 0, score.len() as u32 * 15, 44);
+        canvas.copy(&texture, None, Some(target)).unwrap();
+
+        game.remove_current_piece();
+
+        canvas.present();
 
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 600));
     }
     0
 }
 
-const MAX_POSSIBLE_VAL: u64 = 10000;
-const POP_SIZE: usize = 1000;
-const RUN_AMOUNT: usize = 5;
+pub fn run_tetris(run_count: usize, fitness_params: [u64; 6]) -> u32 {
+    // ==========
+    // Game logic
+    // ==========
+
+    let mut game = Game::new();
+    let mut loop_counter = 0usize;
+    let mut rng = StdRng::from_seed([0; 32]);
+    let mut round_counter = 0;
+    let mut score_accumulator = 0;
+
+    'gameloop: loop {
+        loop_counter += 1;
+        let mut action = NONE;
+
+        // Update
+        // force down the piece in every few iteration
+        if loop_counter > 20 {
+            loop_counter = 0;
+            // if cant, then add the piece to the board and spawn a new one
+            if !game.move_piece_down() {
+                game.add_current_piece();
+                let kind = game.next_piece_kind;
+
+                if !game.does_piece_fit(kind, 0, 0, 5) {
+                    round_counter += 1;
+                    score_accumulator += game.score;
+
+                    game = Game::new();
+
+                    if round_counter >= run_count {
+                        return score_accumulator / run_count as u32;
+                    }
+                }
+
+                game.score += 1;
+                game.find_and_remove_solved_lines();
+
+                game.curr_piece = Piece {
+                    kind,
+                    rotation: 0,
+                    x: 0,
+                    y: 5,
+                };
+                game.next_piece_kind = rng.gen::<usize>() % 7;
+                game.target_piece = Piece {
+                    kind: 100,
+                    rotation: 100,
+                    x: 100,
+                    y: 100,
+                };
+            }
+
+            // if the current input action was moving down then do not do it since the
+            // piece was already moved down
+            if action == DOWN {
+                action = NONE;
+            }
+        }
+
+        let action = game.bot(fitness_params);
+
+        match action {
+            LEFT => game.move_piece_left(),
+            RIGHT => game.move_piece_right(),
+            DOWN => game.move_piece_down(),
+            ROTATE => game.rotate_piece(),
+            QUIT => break 'gameloop,
+            _ => false,
+        };
+    }
+    0
+}
+
+const MAX_POSSIBLE_VAL: u64 = 1000_000;
+const POP_SIZE: usize = 100;
+const RUN_AMOUNT: usize = 1;
 const PARENTS_RATIO: usize = 2;
 const PARENTS_SIZE: usize = POP_SIZE / PARENTS_RATIO;
-const TARGET_SCORE: u64 = 100000;
+const TARGET_SCORE: u64 = 1000_000;
 const MAX_GENERATION: u64 = 1000;
 const MUTATION_PROBABILITY: usize = 20;
 
@@ -228,6 +300,11 @@ impl DNA {
     }
 }
 
+pub fn main2() {
+    // 285135 [110145] [258489] [787629] [778910] [51634] [973159]
+    run_tetris_with_GUI(1, [33013, 72003, 39630, 12761, 17457, 80641]);
+}
+
 pub fn main() {
     let mut population: [DNA; POP_SIZE] = [DNA::new(MAX_POSSIBLE_VAL); POP_SIZE];
     let mut generation = 0;
@@ -236,16 +313,6 @@ pub fn main() {
         params: [0u64; 6],
         score: 0u64,
     };
-    // Elapsed time 170428 ms
-    // Runs #5, Generation #53, Current best score 5125
-    //     [1497] [1605] [225] [142] [1095] [718]
-    //     -----------------------------------------------
-    // population[0] = DNA {
-    //     params: [292u64, 481u64, 750u64, 814u64, 172u64, 168u64],
-    //     score: 0u64,
-    // };
-
-    let mut rng = rand::thread_rng();
 
     while best.score < TARGET_SCORE && generation < MAX_GENERATION {
         generation += 1;
@@ -263,21 +330,23 @@ pub fn main() {
         //     // }
         // }
 
+        let mut rng = thread_rng();
+        population.shuffle(&mut rng);
+
         let mut chunked_populataion: Vec<(usize, &mut [DNA])> =
             population.chunks_mut(10).enumerate().collect();
 
         chunked_populataion
             .par_iter_mut()
             .for_each(|(i, pop_chunk)| {
-
                 for idx in 0..10usize {
                     pop_chunk[idx].score =
-                        run_tetris(RUN_AMOUNT, true, pop_chunk[idx].params) as u64;
+                        run_tetris(RUN_AMOUNT, pop_chunk[idx].params) as u64;
                 }
             });
 
         // get the elapsed time
-        println!("Elapsed time {:} ms", start.elapsed().as_millis());
+        println!("{:} | Elapsed time {:} ms", Utc::now(), start.elapsed().as_millis());
 
         population.sort_by(|a, b| b.score.cmp(&a.score));
 

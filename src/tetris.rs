@@ -10,13 +10,13 @@ pub(crate) const HEIGHT: u8 = (SCREEN_HEIGHT / RECT_DIM) as u8;
 
 #[warn(non_upper_case_globals)]
 pub static tetrominos: [[u8; 16]; 7] = [
-    [0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-    [0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-    [0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0],
-    [0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0],
-    [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0],
+    [0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0], // S
+    [0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0], // T
+    [0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0], // Z
+    [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0], // L
+    [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0], // O
+    [0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0], // J
+    [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0], // I
 ];
 
 #[derive(PartialEq)]
@@ -41,6 +41,8 @@ pub struct Game {
     pub board: Vec<Vec<u8>>,
     pub score: u32,
     pub curr_piece: Piece,
+    pub next_piece_kind: usize,
+    pub target_piece: Piece,
 }
 
 impl Game {
@@ -53,6 +55,13 @@ impl Game {
                 rotation: 0,
                 x: 0,
                 y: 5,
+            },
+            next_piece_kind: 0,
+            target_piece: Piece {
+                kind: 100,
+                rotation: 100,
+                x: 100,
+                y: 100,
             },
         }
     }
@@ -379,69 +388,132 @@ impl Game {
         fitness
     }
 
+    // minor run time optimization
+    // some pieces symmetric, therefore pointless to test some of its rotations
+    // for example: cube (name: O) rotation is pointless
+    pub fn max_rotation(kind: usize) -> u8 {
+        match kind {
+            0 | 2 | 6 => 2, // S, Z, I
+            4 => 1,         // O
+            _ => 4,
+        }
+    }
+
     pub fn bot(&mut self, fitness_params: [u64; 6]) -> MoveAction {
         let kind = self.curr_piece.kind;
         let mut best_fitness = 0u64;
         let mut best_piece = self.curr_piece;
         let original_piece = self.curr_piece; // save the original values
 
-        for rotation in 0..4u8 {
-            for col in 0..WIDTH as i8 + 5 {
-                let col = col - 2;
-                let mut curr_piece_x = self.curr_piece.x;
+        if self.target_piece.kind == 100 {
+            for rotation in 0..Game::max_rotation(kind) {
+                for col in 0..WIDTH as i8 + 5 {
+                    let col = col - 2;
+                    let mut curr_piece_x = self.curr_piece.x;
 
-                // if the piece cannot even placed then continue with next iteration
-                if !self.does_piece_fit(kind, rotation, curr_piece_x, col) {
-                    continue;
-                }
+                    // if the piece cannot even placed then continue with next iteration
+                    if !self.does_piece_fit(kind, rotation, curr_piece_x, col) {
+                        continue;
+                    }
 
-                // pushing down the piece until it would stuck into its final place
-                while self.does_piece_fit(kind, rotation, curr_piece_x + 1, col) {
-                    curr_piece_x += 1;
-                }
+                    // pushing down the piece until it would stuck into its final place
+                    while self.does_piece_fit(kind, rotation, curr_piece_x + 1, col) {
+                        curr_piece_x += 1;
+                    }
 
-                // evaluate the resulting game board goodness
+                    // evaluate the resulting game board goodness
 
-                // Step 1: adding the piece to the board
-                self.curr_piece = Piece {
-                    kind,
-                    rotation,
-                    x: curr_piece_x,
-                    y: col,
-                };
-                self.add_current_piece();
-
-                // Step 2: calculate the fitness
-                let fitness = self.fitness(fitness_params);
-
-                // Step 3: remove the piece and restore position
-                self.remove_current_piece();
-                self.curr_piece = original_piece;
-
-                // check whether this move is better then the current best
-                if fitness > best_fitness {
-                    best_piece = Piece {
+                    // Step 1: adding the piece to the board
+                    self.curr_piece = Piece {
                         kind,
                         rotation,
                         x: curr_piece_x,
                         y: col,
                     };
-                    best_fitness = fitness;
+                    self.add_current_piece();
+
+                    let kind_2 = self.next_piece_kind;
+                    self.curr_piece = Piece {
+                        kind: self.next_piece_kind,
+                        rotation: 0,
+                        x: 0,
+                        y: 5,
+                    };
+                    let original_piece_2 = self.curr_piece;
+
+                    for rotation_2 in 0..Game::max_rotation(kind_2) {
+                        for col_2 in 0..WIDTH as i8 + 5 {
+                            let col_2 = col_2 - 2;
+                            let mut curr_piece_x_2 = self.curr_piece.x;
+
+                            // if the piece cannot even placed then continue with next iteration
+                            if !self.does_piece_fit(kind_2, rotation_2, curr_piece_x_2, col_2) {
+                                continue;
+                            }
+
+                            // pushing down the piece until it would stuck into its final place
+                            while self.does_piece_fit(kind_2, rotation_2, curr_piece_x_2 + 1, col_2) {
+                                curr_piece_x_2 += 1;
+                            }
+
+                            // evaluate the resulting game board goodness
+
+                            // Step 1: adding the piece to the board
+                            self.curr_piece = Piece {
+                                kind: kind_2,
+                                rotation: rotation_2,
+                                x: curr_piece_x_2,
+                                y: col_2,
+                            };
+                            self.add_current_piece();
+
+                            // Step 2: calculate the fitness
+                            let fitness = self.fitness(fitness_params);
+
+                            // Step 3: remove the piece and restore position
+                            self.remove_current_piece();
+                            self.curr_piece = original_piece_2;
+
+                            // check whether this move is better then the current best
+                            if fitness > best_fitness {
+                                best_piece = Piece {
+                                    kind,
+                                    rotation,
+                                    x: curr_piece_x,
+                                    y: col,
+                                };
+                                best_fitness = fitness;
+                            }
+                        }
+                    }
+
+                    // adding back the outer loops piece to be able to remove it
+                    self.curr_piece = Piece {
+                        kind,
+                        rotation,
+                        x: curr_piece_x,
+                        y: col,
+                    };
+
+                    // Step 3: remove the piece and restore position
+                    self.remove_current_piece();
+                    self.curr_piece = original_piece;
                 }
             }
-        }
 
+            self.target_piece = best_piece;
+        }
         // decide the next move based on the best_piece coordinate and rotation
         // on default just push it down
         let mut bot_action = DOWN;
 
-        if original_piece.rotation != best_piece.rotation {
+        if original_piece.rotation != self.target_piece.rotation {
             bot_action = ROTATE;
         }
         // if the @y coordinates are different then
-        else if original_piece.y != best_piece.y {
+        else if original_piece.y != self.target_piece.y {
             // move RIGHT if the current piece is left to the best move
-            if original_piece.y < best_piece.y {
+            if original_piece.y < self.target_piece.y {
                 bot_action = RIGHT;
             }
             // else the current piece is on the right to the best move so move LEFT
